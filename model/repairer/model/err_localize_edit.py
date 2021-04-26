@@ -12,7 +12,6 @@ from torch.nn.utils.rnn import (
 )
 from repairer.utils import prepare_rnn_seq, recover_rnn_seq
 
-
 from torch.autograd import Variable
 
 import numpy as np
@@ -90,7 +89,7 @@ class ErrLocalizeEditModel(Model):
         # output: (hiddens, (h_n, c_n))
         # hiddens: (seq_len, batch, 2 * lstm_dim)
         # h_n and c_n: (lstm_layers * 2, batch, lstm_dim)
-        self.text_seq_embedder1 = nn.LSTM(
+        self.text_seq_embedder1 = nn.GRU(
             c_model.tok_embed.dim + c_model.pos_embed.dim,
             c_model.tok_seq_embed.lstm_dim,
             num_layers=c_model.tok_seq_embed.lstm_layers -1,
@@ -98,7 +97,7 @@ class ErrLocalizeEditModel(Model):
             dropout=c_model.dropout,
         )
         self.text_linear_after_1st_lstm = nn.Linear(c_model.tok_seq_embed.lstm_dim *2, c_model.tok_embed.dim)
-        self.text_seq_embedder2 = nn.LSTM(
+        self.text_seq_embedder2 = nn.GRU(
             c_model.tok_embed.dim,
             c_model.tok_seq_embed.lstm_dim,
             num_layers=1,
@@ -106,7 +105,7 @@ class ErrLocalizeEditModel(Model):
             dropout=c_model.dropout,
         )
 
-        self.code_seq_embedder1 = nn.LSTM(
+        self.code_seq_embedder1 = nn.GRU(
             c_model.tok_embed.dim + c_model.pos_embed.dim,
             c_model.tok_seq_embed.lstm_dim,
             num_layers=c_model.tok_seq_embed.lstm_layers -1,
@@ -114,7 +113,7 @@ class ErrLocalizeEditModel(Model):
             dropout=c_model.dropout,
         )
         self.code_linear_after_1st_lstm = nn.Linear(c_model.tok_seq_embed.lstm_dim *2, c_model.tok_embed.dim)
-        self.code_seq_embedder2 = nn.LSTM(
+        self.code_seq_embedder2 = nn.GRU(
             graph_attn_dim,
             c_model.tok_seq_embed.lstm_dim,
             num_layers=1,
@@ -125,7 +124,7 @@ class ErrLocalizeEditModel(Model):
             2 * c_model.tok_seq_embed.lstm_layers * c_model.tok_seq_embed.lstm_dim
         )
         if c_model.type in ["code_compiler_text", "code_compiler"]:
-            self.msg_seq_embedder1 = nn.LSTM(
+            self.msg_seq_embedder1 = nn.GRU(
                 c_model.tok_embed.dim + c_model.pos_embed.dim,
                 c_model.tok_seq_embed.lstm_dim,
                 num_layers=c_model.tok_seq_embed.lstm_layers -1,
@@ -133,7 +132,7 @@ class ErrLocalizeEditModel(Model):
                 dropout=c_model.dropout,
             )
             self.msg_linear_after_1st_lstm = nn.Linear(c_model.tok_seq_embed.lstm_dim *2, c_model.tok_embed.dim)
-            self.msg_seq_embedder2 = nn.LSTM(
+            self.msg_seq_embedder2 = nn.GRU(
                 graph_attn_dim,
                 c_model.tok_seq_embed.lstm_dim,
                 num_layers=1,
@@ -164,7 +163,7 @@ class ErrLocalizeEditModel(Model):
         ##LSTM3 (line-level lstm)
         # input: (batch, num_lines, combo_out_dim)
         # hiddens: (batch, seq_len, 2 * lstm_dim)
-        self.line_seq_embedder = nn.LSTM(
+        self.line_seq_embedder = nn.GRU(
             c_model.combo_mlp.out_dim,
             c_model.line_seq_embed.lstm_dim,
             num_layers=c_model.line_seq_embed.lstm_layers,
@@ -344,8 +343,8 @@ class ErrLocalizeEditModel(Model):
 
             #LSTM encoding1
             code_wembs = code_wembs.view(_b_size, _num_lines, _true_slen, _wembdim2) #(batch, num_lines, true_slen, dim)
-            msg_embeds1, msg_embeds_c1, msg_wembs = self.embed_stuff_for_lstm(msg_indices, msg_wembs, self.msg_seq_embedder1)
-            code_embeds1, code_embeds_c1, code_wembs = self.embed_stuff_for_lstm(code_indices, code_wembs, self.code_seq_embedder1)
+            msg_embeds1, msg_wembs = self.embed_stuff_for_gru(msg_indices, msg_wembs, self.msg_seq_embedder1)
+            code_embeds1, code_wembs = self.embed_stuff_for_gru(code_indices, code_wembs, self.code_seq_embedder1)
             msg_wembs = self.msg_linear_after_1st_lstm(msg_wembs) #(batch, msg_slen, wembdim)
             code_wembs = self.code_linear_after_1st_lstm(code_wembs) #(batch, num_lines, true_slen, wembdim)
 
@@ -387,12 +386,12 @@ class ErrLocalizeEditModel(Model):
             code_indices = code_indices.view(_b_size, _num_lines, _true_slen) #(batch, num_lines, true_slen)
 
             #LSTM encoding2
-            msg_embeds2, msg_embeds_c2, msg_embeds_output = self.embed_stuff_for_lstm(msg_indices, msg_wembs, self.msg_seq_embedder2)
+            msg_embeds2, msg_embeds_output = self.embed_stuff_for_gru(msg_indices, msg_wembs, self.msg_seq_embedder2)
             msg_embeds = torch.cat([msg_embeds1, msg_embeds2], dim=1) #(batch, total_lstm_layers * 2 * lstm_dim)
-            msg_embeds_c = torch.cat([msg_embeds_c1, msg_embeds_c2], dim=1) #(batch, total_lstm_layers * 2 * lstm_dim)
-            code_embeds2, code_embeds_c2, code_embeds_output = self.embed_stuff_for_lstm(code_indices, code_wembs, self.code_seq_embedder2)
+            # msg_embeds_c = torch.cat([msg_embeds_c1, msg_embeds_c2], dim=1) #(batch, total_lstm_layers * 2 * lstm_dim)
+            code_embeds2, code_embeds_output = self.embed_stuff_for_gru(code_indices, code_wembs, self.code_seq_embedder2)
             code_embeds = torch.cat([code_embeds1, code_embeds2], dim=2) #(batch, num_lines, total_lstm_layers * 2 * lstm_dim)
-            code_embeds_c = torch.cat([code_embeds_c1, code_embeds_c2], dim=2) #(batch, num_lines, total_lstm_layers * 2 * lstm_dim)
+            # code_embeds_c = torch.cat([code_embeds_c1, code_embeds_c2], dim=2) #(batch, num_lines, total_lstm_layers * 2 * lstm_dim)
 
             # Concatenate everything
             combo = torch.cat([
@@ -415,15 +414,15 @@ class ErrLocalizeEditModel(Model):
 
             #LSTM encoding1
             code_wembs = code_wembs.view(_b_size, _num_lines, _true_slen, _wembdim2) #(batch, num_lines, true_slen, dim)
-            code_embeds1, code_embeds_c1, code_wembs = self.embed_stuff_for_lstm(code_indices, code_wembs, self.code_seq_embedder1)
+            code_embeds1, code_wembs = self.embed_stuff_for_gru(code_indices, code_wembs, self.code_seq_embedder1)
             code_wembs = self.code_linear_after_1st_lstm(code_wembs) #(batch, num_lines, true_slen, wembdim)
 
             _b_size, _num_lines, _true_slen, _wembdim = code_wembs.size()
 
             #LSTM encoding2
-            code_embeds2, code_embeds_c2, code_embeds_output = self.embed_stuff_for_lstm(code_indices, code_wembs, self.code_seq_embedder2)
+            code_embeds2, code_embeds_output = self.embed_stuff_for_gru(code_indices, code_wembs, self.code_seq_embedder2)
             code_embeds = torch.cat([code_embeds1, code_embeds2], dim=2) #(batch, num_lines, total_lstm_layers * 2 * lstm_dim)
-            code_embeds_c = torch.cat([code_embeds_c1, code_embeds_c2], dim=2) #(batch, num_lines, total_lstm_layers * 2 * lstm_dim)
+            # code_embeds_c = torch.cat([code_embeds_c1, code_embeds_c2], dim=2) #(batch, num_lines, total_lstm_layers * 2 * lstm_dim)
 
             # Concatenate everything
             combo = code_embeds
@@ -456,9 +455,9 @@ class ErrLocalizeEditModel(Model):
             #LSTM encoding1
             code_wembs = code_wembs.view(_b_size, _num_lines, _true_slen, _wembdim2) #(batch, num_lines, true_slen, dim)
             text_wembs = text_wembs.view(_b_size, _num_lines, -1, _wembdim2)
-            msg_embeds1, msg_embeds_c1, msg_wembs = self.embed_stuff_for_lstm(msg_indices, msg_wembs, self.msg_seq_embedder1)
-            code_embeds1, code_embeds_c1, code_wembs = self.embed_stuff_for_lstm(code_indices, code_wembs, self.code_seq_embedder1)
-            text_embeds1, text_embeds_c1, text_wembs = self.embed_stuff_for_lstm(text_indices, text_wembs, self.text_seq_embedder1)
+            msg_embeds1, msg_wembs = self.embed_stuff_for_gru(msg_indices, msg_wembs, self.msg_seq_embedder1)
+            code_embeds1, code_wembs = self.embed_stuff_for_gru(code_indices, code_wembs, self.code_seq_embedder1)
+            text_embeds1, text_wembs = self.embed_stuff_for_gru(text_indices, text_wembs, self.text_seq_embedder1)
             msg_wembs = self.msg_linear_after_1st_lstm(msg_wembs) #(batch, msg_slen, wembdim)
             code_wembs = self.code_linear_after_1st_lstm(code_wembs) #(batch, num_lines, true_slen, wembdim)
             text_wembs = self.text_linear_after_1st_lstm(text_wembs)
@@ -502,15 +501,15 @@ class ErrLocalizeEditModel(Model):
             code_indices = code_indices.view(_b_size, _num_lines, _true_slen) #(batch, num_lines, true_slen)
 
             #LSTM encoding2
-            msg_embeds2, msg_embeds_c2, msg_embeds_output = self.embed_stuff_for_lstm(msg_indices, msg_wembs, self.msg_seq_embedder2)
+            msg_embeds2, msg_embeds_output = self.embed_stuff_for_gru(msg_indices, msg_wembs, self.msg_seq_embedder2)
             msg_embeds = torch.cat([msg_embeds1, msg_embeds2], dim=1) #(batch, total_lstm_layers * 2 * lstm_dim)
-            msg_embeds_c = torch.cat([msg_embeds_c1, msg_embeds_c2], dim=1) #(batch, total_lstm_layers * 2 * lstm_dim)
-            code_embeds2, code_embeds_c2, code_embeds_output = self.embed_stuff_for_lstm(code_indices, code_wembs, self.code_seq_embedder2)
+            # msg_embeds_c = torch.cat([msg_embeds_c1, msg_embeds_c2], dim=1) #(batch, total_lstm_layers * 2 * lstm_dim)
+            code_embeds2, code_embeds_output = self.embed_stuff_for_gru(code_indices, code_wembs, self.code_seq_embedder2)
             code_embeds = torch.cat([code_embeds1, code_embeds2], dim=2) #(batch, num_lines, total_lstm_layers * 2 * lstm_dim)
-            code_embeds_c = torch.cat([code_embeds_c1, code_embeds_c2], dim=2) #(batch, num_lines, total_lstm_layers * 2 * lstm_dim)
-            text_embeds2, text_embeds_c2, text_embeds_output = self.embed_stuff_for_lstm(text_indices, text_wembs, self.text_seq_embedder2)
+            # code_embeds_c = torch.cat([code_embeds_c1, code_embeds_c2], dim=2) #(batch, num_lines, total_lstm_layers * 2 * lstm_dim)
+            text_embeds2, text_embeds_output = self.embed_stuff_for_gru(text_indices, text_wembs, self.text_seq_embedder2)
             text_embeds = torch.cat([text_embeds1, text_embeds2], dim=2)
-            text_embeds_c = torch.cat([text_embeds_c1, text_embeds_c2], dim=2)
+            # text_embeds_c = torch.cat([text_embeds_c1, text_embeds_c2], dim=2)
 
             # Concatenate everything
             combo = torch.cat([
@@ -530,27 +529,27 @@ class ErrLocalizeEditModel(Model):
 
         all_enc_stuff = [combo, line_seq_hidden]
         all_enc_stuff += [gold_code_line_stuff]
-        all_enc_stuff += [code_embeds, code_embeds_c, code_indices, code_embeds_output]
+        all_enc_stuff += [code_embeds, code_indices, code_embeds_output]
         if self.c_model.type == "code_only":
             return all_enc_stuff
 
-        all_enc_stuff += [msg_embeds, msg_embeds_c, msg_indices, msg_embeds_output]
+        all_enc_stuff += [msg_embeds, msg_indices, msg_embeds_output]
         if self.c_model.type == "code_compiler":
             return all_enc_stuff
 
         else: #"code_compiler_text"
-            all_enc_stuff += [text_embeds, text_embeds_c, text_indices, text_embeds_output]
+            all_enc_stuff += [text_embeds, text_indices, text_embeds_output]
             return all_enc_stuff
 
 
 
     def forward_localize(self, batch, all_enc_stuff):
         if self.c_model.type == "code_only":
-            combo, line_seq_hidden, gold_code_line_stuff, code_embeds, code_embeds_c, code_indices, code_embeds_output = all_enc_stuff
+            combo, line_seq_hidden, gold_code_line_stuff, code_embeds, code_indices, code_embeds_output = all_enc_stuff
         elif self.c_model.type == "code_compiler":
-            combo, line_seq_hidden, gold_code_line_stuff, code_embeds, code_embeds_c, code_indices, code_embeds_output, msg_embeds, msg_embeds_c, msg_indices, msg_embeds_output = all_enc_stuff
+            combo, line_seq_hidden, gold_code_line_stuff, code_embeds, code_indices, code_embeds_output, msg_embeds, msg_indices, msg_embeds_output = all_enc_stuff
         else: #"code_compiler_text"
-            combo, line_seq_hidden, gold_code_line_stuff, code_embeds, code_embeds_c, code_indices, code_embeds_output, msg_embeds, msg_embeds_c, msg_indices, msg_embeds_output, text_embeds, text_embeds_c, text_indices, text_embeds_output = all_enc_stuff
+            combo, line_seq_hidden, gold_code_line_stuff, code_embeds, code_indices, code_embeds_output, msg_embeds, msg_indices, msg_embeds_output, text_embeds, text_indices, text_embeds_output = all_enc_stuff
 
         # Compute logits
         final_input = line_seq_hidden
@@ -571,11 +570,11 @@ class ErrLocalizeEditModel(Model):
         self.beam_size = beam_size
 
         if self.c_model.type == "code_only":
-            combo, line_seq_hidden, gold_code_line_stuff, code_embeds, code_embeds_c, code_indices, code_embeds_output = all_enc_stuff
+            combo, line_seq_hidden, gold_code_line_stuff, code_embeds, code_indices, code_embeds_output = all_enc_stuff
         elif self.c_model.type == "code_compiler":
-            combo, line_seq_hidden, gold_code_line_stuff, code_embeds, code_embeds_c, code_indices, code_embeds_output, msg_embeds, msg_embeds_c, msg_indices, msg_embeds_output = all_enc_stuff
+            combo, line_seq_hidden, gold_code_line_stuff, code_embeds, code_indices, code_embeds_output, msg_embeds, msg_indices, msg_embeds_output = all_enc_stuff
         else: #"code_compiler_text"
-            combo, line_seq_hidden, gold_code_line_stuff, code_embeds, code_embeds_c, code_indices, code_embeds_output, msg_embeds, msg_embeds_c, msg_indices, msg_embeds_output, text_embeds, text_embeds_c, text_indices, text_embeds_output = all_enc_stuff
+            combo, line_seq_hidden, gold_code_line_stuff, code_embeds, code_indices, code_embeds_output, msg_embeds, msg_indices, msg_embeds_output, text_embeds, text_indices, text_embeds_output = all_enc_stuff
 
 
         # Get gold_linenos (line# for which we need gold for edit)
@@ -628,13 +627,13 @@ class ErrLocalizeEditModel(Model):
         gold_linenos_onehot = gold_linenos.unsqueeze(2).float() #(batch, num_lines, 1)
 
 
-        def get_oneline_vecs(gold_linenos_onehot, embeds_h, embeds_c, embeds_output, indices):
+        def get_oneline_vecs(gold_linenos_onehot, embeds_h, embeds_output, indices):
             # gold_linenos_onehot: #(batch, num_lines, 1)
             # embeds_h & _c: (batch, num_lines, lstm_out_dim)
             # embeds_output: (batch, num_lines, seqlen, dim)
             # indices: #(batch, num_lines, s_len)
             oneline_h = (embeds_h * gold_linenos_onehot).sum(dim=1, keepdim=False) #(batch, dim)
-            oneline_c = (embeds_c * gold_linenos_onehot).sum(dim=1, keepdim=False) #(batch, dim)
+            # oneline_c = (embeds_c * gold_linenos_onehot).sum(dim=1, keepdim=False) #(batch, dim)
             oneline_enc_output = (embeds_output * gold_linenos_onehot.unsqueeze(3)).sum(dim=1, keepdim=False) #(batch, seqlen, dim)
             oneline_indices = (indices.float() * gold_linenos_onehot).sum(dim=1, keepdim=False) #(batch, s_len)
             ## Arrange
@@ -643,10 +642,10 @@ class ErrLocalizeEditModel(Model):
             b_size = oneline_h.size(0)
             lstm_dim = self.c_model.tok_seq_embed.lstm_dim
             oneline_h = oneline_h.view(b_size, -1, lstm_dim).transpose(0,1)
-            oneline_c = oneline_c.view(b_size, -1, lstm_dim).transpose(0,1)
+            # oneline_c = oneline_c.view(b_size, -1, lstm_dim).transpose(0,1)
             oneline_enc_output = oneline_enc_output.transpose(0,1)
             oneline_indices = oneline_indices.transpose(0,1)
-            return oneline_h, oneline_c, oneline_enc_output, oneline_indices
+            return oneline_h, oneline_enc_output, oneline_indices
 
         def format_tensor_length(in_tensor, true_slen): #in_tensor: (batch, ?, seqlen) or (batch, ?, seqlen, dim). format to true_slen
             sizes = list(in_tensor.size())
@@ -707,13 +706,13 @@ class ErrLocalizeEditModel(Model):
         _b_size = line_seq_hidden.size(0)
         if self.c_model.type == "code_compiler":
             for_dec_init_h = self.bridge_h(torch.cat([code_embeds, line_seq_hidden], dim=2)) #(batch, num_lines, lstm_out_dim = lstm_layers *2 * lstm_dim)
-            for_dec_init_c = self.bridge_c(torch.cat([code_embeds_c, line_seq_hidden], dim=2))
-            dec_init_h, dec_init_c, code_oneline_enc_output, code_oneline_indices = get_oneline_vecs(gold_linenos_onehot, for_dec_init_h, for_dec_init_c, code_embeds_output, code_indices)
+            # for_dec_init_c = self.bridge_c(torch.cat([code_embeds_c, line_seq_hidden], dim=2))
+            dec_init_h, code_oneline_enc_output, code_oneline_indices = get_oneline_vecs(gold_linenos_onehot, for_dec_init_h, code_embeds_output, code_indices)
 
             if not self.c_model.decoder_attend_all:
                 true_slen = code_indices.size(2)
                 src_vocabs, src_map = prep_src_map_one_line(true_slen)
-                packed_dec_input = [dec_init_h, dec_init_c, code_oneline_enc_output, code_oneline_indices, gold_code_line_stuff]
+                packed_dec_input = [dec_init_h, code_oneline_enc_output, code_oneline_indices, gold_code_line_stuff]
             else:
                 true_slen = code_indices.size(2)
                 src_vocabs, src_map = prep_src_map_all_lines(true_slen)
@@ -724,17 +723,17 @@ class ErrLocalizeEditModel(Model):
                 _, _, _, __dim = all_enc_output.size()
                 all_src_indices = all_src_indices.view(_b_size, -1).transpose(0,1) #(1+num_lines * seqlen, batch)
                 all_enc_output  = all_enc_output.view(_b_size, -1, __dim).transpose(0,1) #(1+num_lines * seqlen, batch, dim)
-                packed_dec_input = [dec_init_h, dec_init_c, all_enc_output, all_src_indices, gold_code_line_stuff]
+                packed_dec_input = [dec_init_h, all_enc_output, all_src_indices, gold_code_line_stuff]
 
         elif self.c_model.type == "code_only":
             for_dec_init_h = self.bridge_h(torch.cat([code_embeds, line_seq_hidden], dim=2)) #(batch, num_lines, lstm_out_dim = lstm_layers *2 * lstm_dim)
-            for_dec_init_c = self.bridge_c(torch.cat([code_embeds_c, line_seq_hidden], dim=2))
-            dec_init_h, dec_init_c, code_oneline_enc_output, code_oneline_indices = get_oneline_vecs(gold_linenos_onehot, for_dec_init_h, for_dec_init_c, code_embeds_output, code_indices)
+            # for_dec_init_c = self.bridge_c(torch.cat([code_embeds_c, line_seq_hidden], dim=2))
+            dec_init_h, code_oneline_enc_output, code_oneline_indices = get_oneline_vecs(gold_linenos_onehot, for_dec_init_h, code_embeds_output, code_indices)
 
             if not self.c_model.decoder_attend_all:
                 true_slen = code_indices.size(2)
                 src_vocabs, src_map = prep_src_map_one_line(true_slen)
-                packed_dec_input = [dec_init_h, dec_init_c, code_oneline_enc_output, code_oneline_indices, gold_code_line_stuff]
+                packed_dec_input = [dec_init_h, code_oneline_enc_output, code_oneline_indices, gold_code_line_stuff]
             else:
                 true_slen = code_indices.size(2)
                 src_vocabs, src_map = prep_src_map_all_lines(true_slen)
@@ -743,16 +742,16 @@ class ErrLocalizeEditModel(Model):
                 _, _, _, __dim = all_enc_output.size()
                 all_src_indices = all_src_indices.view(_b_size, -1).transpose(0,1) #(num_lines * seqlen, batch)
                 all_enc_output  = all_enc_output.view(_b_size, -1, __dim).transpose(0,1) #(num_lines * seqlen, batch)
-                packed_dec_input = [dec_init_h, dec_init_c, all_enc_output, all_src_indices, gold_code_line_stuff]
+                packed_dec_input = [dec_init_h, all_enc_output, all_src_indices, gold_code_line_stuff]
 
         else: #"code_compiler_text"
             for_dec_init_h = self.bridge_h(torch.cat([text_embeds, line_seq_hidden], dim=2)) #(batch, num_lines, lstm_out_dim = lstm_layers *2 * lstm_dim)
             for_dec_init_c = self.bridge_c(torch.cat([text_embeds_c, line_seq_hidden], dim=2))
-            dec_init_h, dec_init_c, text_oneline_enc_output, text_oneline_indices = get_oneline_vecs(gold_linenos_onehot, for_dec_init_h, for_dec_init_c, text_embeds_output, text_indices)
+            dec_init_h, text_oneline_enc_output, text_oneline_indices = get_oneline_vecs(gold_linenos_onehot, for_dec_init_h, text_embeds_output, text_indices)
             if not self.c_model.decoder_attend_all:
                 true_slen = text_indices.size(2)
                 src_vocabs, src_map = prep_src_map_one_line(true_slen)
-                packed_dec_input = [dec_init_h, dec_init_c, text_oneline_enc_output, text_oneline_indices, gold_code_line_stuff]
+                packed_dec_input = [dec_init_h, text_oneline_enc_output, text_oneline_indices, gold_code_line_stuff]
             else:
                 true_slen = max(text_indices.size(2), code_indices.size(2))
                 src_vocabs, src_map = prep_src_map_all_lines(true_slen)
@@ -771,7 +770,7 @@ class ErrLocalizeEditModel(Model):
                 _, _, _, __dim = all_enc_output.size()
                 all_src_indices = all_src_indices.view(_b_size, -1).transpose(0,1) #(1+2*num_lines * seqlen, batch)
                 all_enc_output  = all_enc_output.view(_b_size, -1, __dim).transpose(0,1) #(1+2*num_lines * seqlen, batch, dim)
-                packed_dec_input = [dec_init_h, dec_init_c, all_enc_output, all_src_indices, gold_code_line_stuff]
+                packed_dec_input = [dec_init_h, all_enc_output, all_src_indices, gold_code_line_stuff]
 
 
         dec_output, padded_gold_code_line = self.forward_helper_decode(batch, packed_dec_input, src_vocabs, src_map, train_mode) #(max_seq_len, batch_size, vocab_size)
@@ -787,7 +786,7 @@ class ErrLocalizeEditModel(Model):
         """
         used inside of forward
         """
-        enc_h, enc_c, enc_output, src_indices, gold_code_line_stuff = packed_dec_input # src_indices is already padded
+        enc_h, enc_output, src_indices, gold_code_line_stuff = packed_dec_input # src_indices is already padded
         batch_size = enc_output.size(1)
         # code_line_stuff & gold_code_line_stuff: list [batch, seqlen]
         gold_code_line = [torch.tensor([BOS_INDEX]+ seq +[EOS_INDEX]) for seq in gold_code_line_stuff]
@@ -800,9 +799,10 @@ class ErrLocalizeEditModel(Model):
         _, _, enc_dim = enc_h.size()
         enc_h = enc_h.transpose(0,1).view(batch_size, self.c_model.tok_seq_embed.lstm_layers, -1) #(B, layers, dim)
         enc_h = enc_h.transpose(0,1).contiguous() #(layers, B, dim)
-        enc_c = enc_c.transpose(0,1).view(batch_size, self.c_model.tok_seq_embed.lstm_layers, -1)
-        enc_c = enc_c.transpose(0,1).contiguous()
-        hidden = (enc_h, enc_c)
+        # enc_c = enc_c.transpose(0,1).view(batch_size, self.c_model.tok_seq_embed.lstm_layers, -1)
+        # enc_c = enc_c.transpose(0,1).contiguous()
+        # hidden = (enc_h, enc_c)
+        hidden = enc_h
 
         if train_mode: #training mode
             output_tokens = padded_gold_code_line #(seq, B)
@@ -931,10 +931,10 @@ class ErrLocalizeEditModel(Model):
         batch_size = enc_output.size(1)
 
         src_map = Variable(src_map.data.repeat(1, beam_size, 1)) #(s_len, beam_size * batch, svocab)
-        enc_h_t, enc_c_t = enc_hidden
+        enc_h_t = enc_hidden
         dec_states = [
-            Variable(enc_h_t.data.repeat(1, beam_size, 1)),
-            Variable(enc_c_t.data.repeat(1, beam_size, 1))
+            Variable(enc_h_t.data.repeat(1, beam_size, 1))
+            # Variable(enc_c_t.data.repeat(1, beam_size, 1))
         ]
         memory_bank = Variable(enc_output.data.repeat(1, beam_size, 1)) #(s_len, beam_size * batch, dim)
         memory_mask = Variable(mask.data.repeat(beam_size, 1)) #(beam_size * batch, s_len)
@@ -963,8 +963,8 @@ class ErrLocalizeEditModel(Model):
         context_vec = None
         for step in range(max_length):
             input = beam.current_predictions.view(1, -1) #(1, B x parallel_paths)
-            scores, (trg_h_t, trg_c_t), attn, context_vec = self._decode_and_generate_one_step(input, (dec_states[0], dec_states[1]), memory_bank, memory_mask, context_vec, extra_feed_, src_vocabs, src_map, beam_size, collapse=True, batch_offset=beam._batch_offset)
-            dec_states = (trg_h_t, trg_c_t)
+            scores, trg_h_t, attn, context_vec = self._decode_and_generate_one_step(input, dec_states[0], memory_bank, memory_mask, context_vec, extra_feed_, src_vocabs, src_map, beam_size, collapse=True, batch_offset=beam._batch_offset)
+            dec_states = trg_h_t
             log_probs = scores.log()
 
             beam.advance(log_probs, attn)
@@ -983,8 +983,7 @@ class ErrLocalizeEditModel(Model):
                 src_map = src_map.index_select(1, select_indices)
                 extra_feed_ = extra_feed_.index_select(1, select_indices) if extra_feed_ is not None else None
                 dec_states = (
-                    dec_states[0].index_select(1, select_indices),
-                    dec_states[1].index_select(1, select_indices)
+                    dec_states.index_select(1, select_indices),
                 )
 
         allHyp, allScores = beam.predictions, beam.scores #allHyp: list[batch, nbest, toks].  allScores: list[batch, nbest]
@@ -1119,7 +1118,7 @@ class ErrLocalizeEditModel(Model):
         return padded_token_indices.contiguous(), embedded_tokens.contiguous()
 
 
-    def embed_stuff_for_lstm(self, inp_indices, inp_wembs, seq_embedder):
+    def embed_stuff_for_gru(self, inp_indices, inp_wembs, seq_embedder):
         """
         Embed the sequences.
         """
@@ -1137,25 +1136,26 @@ class ErrLocalizeEditModel(Model):
         inp_length = inp_mask.sum(dim=1) #(`batch`,)
         inp_wembs = inp_wembs.transpose(0,1) #(true_slen, `batch`, dim)
 
-        #LSTM
+        #GRU
         seq_input, hx, rev_order, mask = prepare_rnn_seq(inp_wembs, inp_length, hx=None, masks=None, batch_first=False)
         seq_output, hn = seq_embedder(seq_input)
-        lstm_output, (h_n, c_n) = recover_rnn_seq(seq_output, rev_order, hx=hn, batch_first=False) #lstm_output:(slen, `batch`, 2*lstm_dim). h_n:(lstm_layers * 2, `batch`, lstm_dim)
+        lstm_output, h_n = recover_rnn_seq(seq_output, rev_order, hx=hn, batch_first=False) #lstm_output:(slen, `batch`, 2*lstm_dim). h_n:(lstm_layers * 2, `batch`, lstm_dim)
         _num_seqs = lstm_output.size(1)
         lstm_output_fullypadded = try_gpu(torch.zeros((true_slen, _num_seqs, lstm_output.size(2)))).float()
         lstm_output_fullypadded[:lstm_output.size(0)] = lstm_output #(true_slen, `batch`, 2*lstm_dim)
 
         # Arrange dimenstions
         lstm_out_h = h_n.transpose(0, 1).reshape(_num_seqs, -1) #(`batch`, lstm_layers * 2 * lstm_dim)
-        lstm_out_c = c_n.transpose(0, 1).reshape(_num_seqs, -1)
+        # lstm_out_c = c_n.transpose(0, 1).reshape(_num_seqs, -1)
         lstm_output = lstm_output_fullypadded.transpose(0, 1).reshape(_num_seqs, true_slen, -1) #(`batch`, true_slen, lstm_dim *2)
 
         if _2d_flag:
             lstm_out_h = lstm_out_h.view(_b_size, _num_lines, -1) #(batch, num_lines, lstm_layers * 2 * lstm_dim)
-            lstm_out_c = lstm_out_c.view(_b_size, _num_lines, -1) #(batch, num_lines, lstm_layers * 2 * lstm_dim)
+            # lstm_out_c = lstm_out_c.view(_b_size, _num_lines, -1) #(batch, num_lines, lstm_layers * 2 * lstm_dim)
             lstm_output = lstm_output.view(_b_size, _num_lines, true_slen, -1) #(batch, num_lines, true_slen, lstm_dim *2)
 
-        return lstm_out_h, lstm_out_c, lstm_output
+        # return lstm_out_h, lstm_out_c, lstm_output
+        return lstm_out_h, lstm_output
 
 
 

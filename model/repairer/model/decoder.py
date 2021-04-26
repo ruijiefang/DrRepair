@@ -85,10 +85,10 @@ class Decoder(nn.Module):
         self.dropout = dropout
         self.embedding = embedding
 
-        self.lstm = nn.LSTM(embedding_size, hidden_size, n_layers,
+        self.gru = nn.GRU(embedding_size, hidden_size, n_layers,
                           dropout=dropout)
 
-        self.concat = nn.Linear(hidden_size * 2, hidden_size)
+        self.concat = nn.Linear(2*hidden_size, hidden_size)
         self.attn = Attention(hidden_size)
         self.copy_attn = Attention(hidden_size)
 
@@ -112,7 +112,7 @@ class Decoder(nn.Module):
             embedded = torch.cat([embedded, extra_feed], dim=2)
 
         # Pass through LSTM
-        rnn_output, hidden_state = self.lstm(embedded, hidden_state)
+        rnn_output, hidden_state = self.gru(embedded, hidden_state)
         #rnn_output: (seq_len=1, batch, hidden_size)
 
         # Calculate attention weights
