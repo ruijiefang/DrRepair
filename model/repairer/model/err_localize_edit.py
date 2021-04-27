@@ -932,10 +932,8 @@ class ErrLocalizeEditModel(Model):
 
         src_map = Variable(src_map.data.repeat(1, beam_size, 1)) #(s_len, beam_size * batch, svocab)
         enc_h_t = enc_hidden
-        dec_states = [
-            Variable(enc_h_t.data.repeat(1, beam_size, 1))
+        dec_states = Variable(enc_h_t.data.repeat(1, beam_size, 1))
             # Variable(enc_c_t.data.repeat(1, beam_size, 1))
-        ]
         memory_bank = Variable(enc_output.data.repeat(1, beam_size, 1)) #(s_len, beam_size * batch, dim)
         memory_mask = Variable(mask.data.repeat(beam_size, 1)) #(beam_size * batch, s_len)
         extra_feed_ = Variable(extra_feed.data.repeat(1, beam_size, 1)) if extra_feed is not None else None #(1, beam_size * batch, dim)
@@ -963,7 +961,7 @@ class ErrLocalizeEditModel(Model):
         context_vec = None
         for step in range(max_length):
             input = beam.current_predictions.view(1, -1) #(1, B x parallel_paths)
-            scores, trg_h_t, attn, context_vec = self._decode_and_generate_one_step(input, dec_states[0], memory_bank, memory_mask, context_vec, extra_feed_, src_vocabs, src_map, beam_size, collapse=True, batch_offset=beam._batch_offset)
+            scores, trg_h_t, attn, context_vec = self._decode_and_generate_one_step(input, dec_states, memory_bank, memory_mask, context_vec, extra_feed_, src_vocabs, src_map, beam_size, collapse=True, batch_offset=beam._batch_offset)
             dec_states = trg_h_t
             log_probs = scores.log()
 
@@ -982,9 +980,8 @@ class ErrLocalizeEditModel(Model):
                 memory_mask = memory_mask.index_select(0, select_indices)
                 src_map = src_map.index_select(1, select_indices)
                 extra_feed_ = extra_feed_.index_select(1, select_indices) if extra_feed_ is not None else None
-                dec_states = (
-                    dec_states.index_select(1, select_indices),
-                )
+                dec_states = (dec_states.index_select(1, select_indices))
+                
 
         allHyp, allScores = beam.predictions, beam.scores #allHyp: list[batch, nbest, toks].  allScores: list[batch, nbest]
         return allHyp, allScores
