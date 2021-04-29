@@ -13,5 +13,6 @@ evaluation/deepfix/out*
 evaluation/spoc/out*
 evaluation/spoc/translat*
 
+*.DS_Store
 
 codalab
