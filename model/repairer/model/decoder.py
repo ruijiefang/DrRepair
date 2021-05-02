@@ -83,7 +83,7 @@ class Decoder(nn.Module):
         self.output_size = output_size #this should be vocab size
         self.n_layers = n_layers
         self.dropout = dropout
-        self.embedding = embedding  
+        self.embedding = embedding
 
         self.gru = nn.GRU(embedding_size, hidden_size, n_layers,
                           dropout=dropout)
@@ -101,22 +101,28 @@ class Decoder(nn.Module):
         mask: [batch, s_len]
         extra_feed: [1, batch, dim]
         """
+#        print("encoder_outputs", encoder_outputs.shape)
         _, batch_size, enc_dim = encoder_outputs.size()
         if context_vec is None:
             context_vec = try_gpu(torch.zeros(1, batch_size, enc_dim).float())
 
         # convert current_token to word_embedding
         embedded = self.embedding(current_token) #[1, batch, dim]
+ #       print("should be 1,batch, 200: " , embedded.shape)
         embedded = torch.cat([embedded, context_vec], dim=2)
+ #       print("should be 1, batch, 200+400: ", embedded.shape)
         if extra_feed is not None:
             embedded = torch.cat([embedded, extra_feed], dim=2)
 
         # Pass through LSTM
+        # print("embedded", embedded.shape)
+
         rnn_output, hidden_state = self.gru(embedded, hidden_state)
         #rnn_output: (seq_len=1, batch, hidden_size)
 
         # Calculate attention weights
         attns = {}
+        # print("encoder_ouputs: ", encoder_outputs.shape)
         p_attn = self.attn(rnn_output, encoder_outputs, mask) #(batch, 1, s_len)
         # copy_attn = self.copy_attn(rnn_output, encoder_outputs, mask)
         attns["std"] = p_attn

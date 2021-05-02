@@ -341,6 +341,7 @@ class BeamSearch(DecodeStrategy):
         # on real data (newstest2017) with the pretrained transformer,
         # it's faster to not move this back to the original device
         self.is_finished = self.is_finished.to('cpu')
+        self.top_beam_finished = self.top_beam_finished.bool()
         self.top_beam_finished |= self.is_finished[:, 0].eq(1)
         predictions = self.alive_seq.view(_B_old, self.beam_size, step)
         attention = (
