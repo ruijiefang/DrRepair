@@ -1,4 +1,6 @@
 *.pyc
+.vscode/
+results/*/
 
 raw_data
 
