@@ -1,6 +1,22 @@
-# DrRepair: Learning to Repair Programs from Error Messages
+# DrRepair: Modifying a Graph-based, Self-Supervised Neural Network for Program Repair
+This is a modification and enhancement of the original DrRepair project, which is a neural architecture designed for automated repair of C/C++ programs. The final report and poster can be found in `final_report.pdf` and `final_poster.pdf` respectively.
 
-This repo provides the source code & data of our paper: [Graph-based, Self-Supervised Program Repair from Diagnostic Feedback](https://arxiv.org/abs/2005.10636) (ICML 2020).
+## Modifications
+The edited version involves three modifications. Each modification can be found under its own separate branch.
+
+### Modification 1: Changing LSTMs to GRUs
+This can be found under the `GRU` branch. Here, the various LSTM layers are changed to GRUs instead.
+
+### Modification 2: Changing LSTMs to Transformers
+This can be found under the `Transformer` branch. Here, the LSTM layers in the encoder are changed to Transformer layers. The decoder uses a GRU.
+
+### Modification 3: Modification 3: Fine-grained error messages
+In this modification, we augment the corruption procedure by corrupting programs in the Codeforces dataset with error messages from the Clang compiler instead of the original GCC compiler for more fine-grained error messages.
+
+## Original DrRepair
+The original DrRepair paper is by Michihiro Yasunaga and Percy Liang. Their original repo provides the source code & can be found here: https://github.com/michiyasunaga/DrRepair.
+
+The original paper can be found here: [Graph-based, Self-Supervised Program Repair from Diagnostic Feedback](https://arxiv.org/abs/2005.10636) (ICML 2020).
 <!-- [[Paper (ICML2020)](https://arxiv.org/abs/2005.10636)] -->
 ```
 @InProceedings{Yasunaga20DrRepair,
@@ -185,11 +201,7 @@ python3 -u ../../collate_spoc.py
 ```
 Concrete examples are provided in `evaluation/run_test_spoc.sh`.
 
-
-
-
-
-## Acknowledgment
+## Further Acknowledgments
 The original DeepFix and SPoC data used in this work come from the following papers:
 ```
 DeepFix: Fixing common C language errors by deep learning. Rahul Gupta, Soham Pal, Aditya Kanade, Shirish Shevade. AAAI 2017.
